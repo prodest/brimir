@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -16,14 +16,15 @@
 
 class Ticket < ActiveRecord::Base
   include CreateFromUser
+  include EmailMessage
+  include TicketMerge
 
   validates_presence_of :user_id
 
   belongs_to :user
   belongs_to :assignee, class_name: 'User'
-
-  has_many :attachments, as: :attachable, dependent: :destroy
-  accepts_nested_attributes_for :attachments, allow_destroy: true
+  belongs_to :to_email_address, -> { EmailAddress.verified }, class_name: 'EmailAddress'
+  belongs_to :locked_by, class_name: 'User'
 
   has_many :replies, dependent: :destroy
   has_many :labelings, as: :labelable, dependent: :destroy
@@ -34,7 +35,7 @@ class Ticket < ActiveRecord::Base
 
   has_many :status_changes, dependent: :destroy
 
-  enum status: [:open, :closed, :deleted, :waiting]
+  enum status: [:open, :closed, :deleted, :waiting, :merged]
   enum priority: [:unknown, :low, :medium, :high]
 
   after_update :log_status_change
@@ -56,7 +57,11 @@ class Ticket < ActiveRecord::Base
   }
 
   scope :by_status, ->(status) {
-    where(status: Ticket.statuses[status.to_sym])
+    if status
+      where(status: Ticket.statuses[status.to_sym])
+    else
+      all
+    end
   }
 
   scope :filter_by_assignee_id, ->(assignee_id) {
@@ -66,6 +71,14 @@ class Ticket < ActiveRecord::Base
       else
         where(assignee_id: assignee_id)
       end
+    else
+      all
+    end
+  }
+  
+  scope :filter_by_user_id, ->(user_id) {
+    if user_id
+      where(user_id: user_id)
     else
       all
     end
@@ -81,20 +94,34 @@ class Ticket < ActiveRecord::Base
   }
 
   scope :ordered, -> {
-    order(:created_at).reverse_order
+    order(:updated_at).reverse_order
   }
 
   scope :viewable_by, ->(user) {
-    if !user.agent?
+    if !user.agent? || user.labelings.count > 0
       ticket_ids = Labeling.where(label_id: user.label_ids)
           .where(labelable_type: 'Ticket')
           .pluck(:labelable_id)
-      where('tickets.id IN (?) OR tickets.user_id = ?', ticket_ids, user.id)
+
+      # all notified tickets
+      ticket_ids += Notification.where(user: user)
+          .where(notifiable_type: 'Ticket')
+          .pluck(:notifiable_id)
+
+      where('tickets.id IN (?) OR tickets.user_id = ? OR tickets.assignee_id = ?',
+          ticket_ids, user.id, user.id)
     end
   }
 
+  scope :unlocked_for, ->(user) {
+    where('locked_by_id IN (?) OR locked_at < ?', [user.id, nil], Time.zone.now - 5.minutes)
+  }
+
   def set_default_notifications!
-    self.notified_user_ids = User.agents_to_notify.pluck(:id)
+    users = User.agents_to_notify.select do |user|
+      Ability.new(user).can? :show, self
+    end
+    self.notified_user_ids = users.map(&:id)
   end
 
   def status_times
@@ -119,6 +146,22 @@ class Ticket < ActiveRecord::Base
     end
 
     total
+  end
+
+  def reply_from_address
+    if to_email_address.nil?
+      EmailAddress.default_email
+    else
+      to_email_address.formatted
+    end
+  end
+
+  def locked?(for_user)
+    locked_by != for_user && locked_by != nil && locked_at > Time.zone.now - 5.minutes
+  end
+
+  def to
+    to_email_address.try :email
   end
 
   protected

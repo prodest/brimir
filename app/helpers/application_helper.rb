@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -37,17 +37,5 @@ module ApplicationHelper
       options = options.merge renderer: Pagination::PaginationRenderer
     end
     super(*[collection_or_options, options].compact)
-  end
-
-  def status_icon(status)
-    if status == 'closed'
-      'check'
-    elsif status == 'deleted'
-      'trash-o'
-    elsif status == 'waiting'
-      'clock-o'
-    else
-      'inbox'
-    end
   end
 end

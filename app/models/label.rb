@@ -1,6 +1,6 @@
 
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -39,7 +39,9 @@ class Label < ActiveRecord::Base
   }
 
   scope :viewable_by, lambda { |user|
-    where(id: user.label_ids) unless user.agent?
+    if !user.agent? || user.labelings.count > 0
+      where(id: user.label_ids)
+    end
   }
 
   def assign_random_color

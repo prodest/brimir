@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -15,9 +15,12 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 class Api::V1::ApplicationController < ActionController::Base
-  protect_from_forgery
+  include MultiTenancy
+  
+  protect_from_forgery with: :null_session
 
   before_action :authenticate_user_from_token!
+  before_action :load_tenant
 
   check_authorization
 
@@ -28,7 +31,7 @@ class Api::V1::ApplicationController < ActionController::Base
     if user && Devise.secure_compare(user.authentication_token, params[:auth_token])
       sign_in user, store: false
     else
-      redirect_to new_user_session_url
+      render nothing: true, status: :unauthorized
     end
   end
 end

@@ -1,14 +1,12 @@
-<div class="panel no-b pam">
+<div class="panel pam no-bt">
   <div class="row collapse">
     <div class="medium-6 columns">
       <h3 class="filter-title no-m pts plm">
-
         <% if params[:q].present? %>
           <%= t(:count_tickets_containing, count: @tickets.count) %> '<em><%= params[:q].to_s %></em>'
         <% else %>
           <%= t(:count_tickets, count: @tickets.count) %>
         <% end %>
-
       </h3>
     </div>
     <div class="medium-6 columns">
@@ -18,7 +16,7 @@
         <div class="row collapse">
           <% params.delete(:controller) %>
           <% params.delete(:action) %>
-          <%= link_to tickets_path(:csv, params), class: 'secondary radius tiny button right mlm' do %>
+          <%= link_to tickets_path(:csv, params), class: 'radius tiny button right mlm no-m' do %>
             <i class="fa fa-cloud-download" style="top:1px"></i>
           <% end %>
 
@@ -38,16 +36,42 @@
       <% end %>
     </div>
   </div>
+  <% if params[:user_id] %>
+    <dl class="sub-nav">
+      <dt><%= t :filter %>:</dt>
+      <dd class="active"><%= link_to root_path do %>
+        <%= User.find(params[:user_id]).email %>&nbsp;&nbsp;
+        <i class="fa fa-times-circle fa-fw"></i>
+      <% end %></dd>
+    </dl>
+  <% end %>
 </div>
-<table class="full">
-  <tbody>
-    <% @tickets.each do |ticket| %>
-      <tr data-ticket-url="<%= ticket_url(ticket) %>">
 
-        <td class="priority-<%= ticket.priority %> table-nowrap">
-          <div class="avatar-left"><%= user_avatar(ticket.user) %></div>
-          <div class="avatar-matter">
-            <span class="block"><%= ticket.user.email %></span>
+<section class="tickets">
+  <%= form_tag tickets_selected_path, method: :patch do %>
+    <ul class="inline-list bb no-m">
+      <li class="pal no-m prm">
+        <input type="checkbox" value="" name="" class="no-mb mts left" data-toggle-all />
+      </li>
+      <% Ticket.statuses.except(params[:status]).except(:merged).keys.each do |value| %>
+        <li class="bl no-m">
+          <button type="submit" name="ticket[status]" value="<%= value %>" class="ptl plm prm pbl text-medium-light-grey no-m no-b">
+            <%= t(value, scope: 'activerecord.attributes.ticket.statuses') %>
+          </button>
+        </li>
+      <% end %>
+      <li class="bl no-m">
+        <button type="submit" name="merge" value="true" class="ptl plm prm pbl text-medium-light-grey no-m no-b" title="<%=t :merge_explanation %>">
+          <%= t :merge %>
+        </button>
+      </li>
+    </ul>
+    <% @tickets.each do |ticket| %>
+      <div class="priority-<%= ticket.priority %> row ticket bb" style="height: 4em;" data-ticket-url="<%= ticket_url(ticket) %>">
+        <div class="medium-6 plxxl v-middle columns">
+          <input type="checkbox" value="<%= ticket.id %>" name="id[]" class="no-mb" data-toggle-check />
+          <%= user_avatar ticket.user, class: 'avatar left mrl mts mlm', size: 30 %>
+          <p class="no-mb text-overflow">
             <% unless ticket.subject.blank? %>
               <a href="<%= ticket_url(ticket) %>">
                 <strong><%= ticket.subject %></strong>
@@ -57,57 +81,84 @@
                 <em><%= t(:no_subject) %></em>
               <% end %>
             <% end %>
-          </div>
-        </td>
-
-        <td>
+            <span class="block">
+              <%= t(:ticket_id_created_by_at, id: ticket.id, user: link_to(ticket.user.email, user_tickets_path(user_id: ticket.user)),
+                  at: l(ticket.created_at.in_time_zone(current_user.time_zone), format: :short)).html_safe %>
+            </span>
+            <% if ticket.locked?(current_user) %>
+              <em><%= t(:locked_by_user, user: ticket.locked_by.email) %></em>
+            <% end %>
+          </p>
+        </div>
+        <div class="medium-1 v-middle columns">
           <% if ticket.replies.size > 0 %>
-            <span class="secondary ba radius label ml" title="<%= ticket.replies.size %> <%= t(:replies) %>"><%= ticket.replies.size %></span>
+             <span class="ba label radius right alt text-secondary" title="<%= ticket.replies.size %> <%= t(:replies) %>">
+               <i class="fa fa-comment "></i>
+               <%= ticket.replies.size %>
+             </span>
+          <% else %>
+            <span>&nbsp;</span>
           <% end %>
-        </td>
-
-        <td class="text-secondary table-nowrap">
+          <% if params[:status].nil? %>
+            <span class="ba label radius right alt text-secondary">
+              <%= status_icon(ticket.status, assigned_to_me: ticket.assignee == current_user) %>
+              <%= t ticket.status %>
+            </span>
+          <% end %>
+        </div>
+        <div class="medium-2 v-middle columns">
           <% ticket.labels.viewable_by(current_user).each do |label| %>
             <%= render label %>
           <% end %>
-        </td>
-        <td class="nowrap text-right text-secondary">
-          <span class="block"><%= l ticket.created_at.in_time_zone(current_user.time_zone), format: :short %></span>
-          <% if can? :update, ticket %>
-            <% if ticket.assignee %>
-              <a data-assignee-id="<%= ticket.assignee.id %>" href="#"><%= user_avatar_or_fa_user_icon(ticket.assignee) %> <%= ticket.assignee.email %></a>
+        </div>
+        <div class="medium-3 v-middle columns">
+          <p class="no-mb text-right">
+            <span class="block" title="<%= l ticket.updated_at.in_time_zone(current_user.time_zone), format: :long %>">
+              <%= time_ago_in_words(ticket.updated_at.in_time_zone(current_user.time_zone)) %>
+              <%= t(:ago) %>
+            </span>
+            <% if can? :update, ticket %>
+              <% if ticket.assignee %>
+                <a data-assignee-id="<%= ticket.assignee.id %>" href="#"><%= ticket.assignee.email %></a>
+              <% else %>
+                <a data-assignee-id="" href="#" class="text-default"><em><%= t(:unassigned) %></em></a>
+              <% end %>
             <% else %>
-              <a data-assignee-id="" href="#"><em><%= t(:unassigned) %></em></a>
+              <% if ticket.assignee %>
+                <%= ticket.assignee.email %>
+              <% else %>
+                <em><%= t(:unassigned) %></em>
+              <% end %>
             <% end %>
-          <% else %>
-            <% if ticket.assignee %>
-              <%= user_avatar_or_fa_user_icon(ticket.assignee) %>
-              <%= ticket.assignee.email %>
-            <% else %>
-              <em><%= t(:unassigned) %></em>
-            <% end %>
-          <% end %>
-        </td>
-      </tr>
+          </p>
+        </div>
+      </div>
     <% end %>
+  <% end %>
 
-    <% if @tickets.empty? %>
-      <tr>
-        <td colspan="100%"><%= t(:no_tickets_found) %></td>
-      </tr>
-    <% end %>
-
-  </tbody>
-</table>
-
-<% unless @tickets.empty? %>
-
-  <div class="row">
-    <div class="small-12 columns">
-      <%= will_paginate @tickets %>
+  <% if @tickets.empty? %>
+    <div class="ticket text-center">
+      <p><%= t(:no_tickets_found) %></p>
     </div>
-  </div>
+  <% end %>
 
-  <%= render 'change_assignee_form', { ticket: Ticket.new } %>
+  <% unless @tickets.empty? %>
 
-<% end %>
+    <div class="row">
+      <div class="small-12 columns">
+        <%= will_paginate @tickets %>
+      </div>
+    </div>
+
+    <%= render 'change_assignee_form', { ticket: Ticket.new } %>
+
+  <% end %>
+</section>
+
+<script>
+  window.onblur = function() {
+    window.onfocus = function() {
+      location.reload(true);
+    };
+  };
+</script>

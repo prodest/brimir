@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -17,45 +17,48 @@
 # replies to tickets, made by a user, possibly with attachments
 class Reply < ActiveRecord::Base
   include CreateFromUser
+  include EmailMessage
+  include ReplyNotifications
 
-  has_many :attachments, as: :attachable, dependent: :destroy
-
-  has_many :notifications, as: :notifiable, dependent: :destroy
-  has_many :notified_users, source: :user, through: :notifications
-
-  accepts_nested_attributes_for :attachments
+  attr_accessor :reply_to_id
+  attr_accessor :reply_to_type
 
   validates :ticket_id, :content, presence: true
 
-  belongs_to :ticket
+  belongs_to :ticket, touch: true
   belongs_to :user
 
-  scope :chronologically, -> { order(:id) }
+  accepts_nested_attributes_for :ticket
+
+  scope :chronologically, -> { order(:created_at) }
   scope :with_message_id, lambda {
     where.not(message_id: nil)
   }
 
-  def set_default_notifications!
-    self.notified_user_ids = users_to_notify.map(&:id)
+  scope :without_drafts, -> {
+    where(draft: false)
+  }
+
+  scope :unlocked_for, ->(user) {
+    joins(:ticket)
+        .where('locked_by_id IN (?) OR locked_at < ?',
+            [user.id, nil], Time.zone.now - 5.minutes)
+  }
+
+  def reply_to
+    reply_to_type.constantize.where(id: self.reply_to_id).first if reply_to_type
+  end
+
+  def reply_to=(value)
+    self.reply_to_id = value.id
+    self.reply_to_type = value.class.name
   end
 
   def other_replies
     ticket.replies.where.not(id: id)
   end
-
-  def users_to_notify
-    to = [ticket.user] + other_replies.map(&:user)
-
-    if ticket.assignee.present?
-      to << ticket.assignee
-    else
-      to += User.agents_to_notify
-    end
-
-    ticket.labels.each do |label|
-      to += label.users
-    end
-
-    to.uniq - [user]
+  
+  def first?
+    reply_to_type == 'Ticket'
   end
 end

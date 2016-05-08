@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -16,39 +16,42 @@
 
 # filter rules applied to a ticket when it is created
 class Rule < ActiveRecord::Base
-  validates :filter_field, :filter_value, presence: true
+  validates :filter_field, presence: true
 
-  enum filter_operation: [:contains]
+  enum filter_operation: [:contains, :equals]
   enum action_operation: [:assign_label, :notify_user, :change_status,
                           :change_priority, :assign_user]
 
   def filter(ticket)
-
     if ticket.respond_to?(filter_field)
-      value = ticket.send(filter_field)
+      value = ticket.send(filter_field).to_s
     else
-      value = ticket.attributes[filter_field]
+      value = ticket.attributes[filter_field].to_s
     end
 
-    value.include?(filter_value) if filter_operation == 'contains'
+    if filter_operation == 'contains'
+      value.downcase.include?(filter_value.downcase)
+    elsif filter_operation == 'equals'
+      value.downcase == filter_value.downcase
+    end
   end
 
   def execute(ticket)
     if action_operation == 'assign_label'
       label = Label.where(name: action_value).first_or_create
-      ticket.labels << label
+      ticket.labels << label unless ticket.labels.include?(label)
 
     elsif action_operation == 'notify_user'
-      user = User.where(email: action_value).first
+      user = User.where(email: action_value).first_or_create
 
       ticket.notified_users << user unless user.nil?
 
     elsif action_operation == 'change_status'
-      ticket.status = action_value
+      ticket.status = action_value.downcase
       ticket.save
 
     elsif action_operation == 'change_priority'
-      ticket.priority = action_value
+      ticket.priority = action_value.downcase
       ticket.save
 
     elsif action_operation == 'assign_user'

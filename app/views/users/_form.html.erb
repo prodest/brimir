@@ -2,14 +2,12 @@
     <div class="row mt mb">
 
       <div class="medium-6 columns">
-        
-        <%= user_avatar(@user, size: 64) %>
 
         <h5><%= t(:account_settings) %></h5>
 
         <p><%= t(:only_fill_in_passwords_when_modifying) %></p>
 
-        <% if can? :manage, User %>
+        <% if can? :create, User %>
             <%= f.text_field :email %>
         <% end %>
 
@@ -17,32 +15,40 @@
 
         <%= f.password_field :password_confirmation %>
 
-        <% if can? :manage, User %>
+        <% if can? :create, User %>
             <%= f.check_box :agent, label: t(:user_is_an_agent) %>
         <% end %>
 
         <%= f.select :time_zone, @time_zones %>
 
-        <% @user.locale = 'en' if @user.locale.blank? # fallback on english  %>
         <%= f.select :locale, @locales %>
 
         <%= f.select :per_page, [10, 20, 30, 50, 75, 100] %>
+
       </div>
 
       <div class="medium-6 columns">
+        <h5><%= t(:email_settings) %></h5>
+
+        <%= f.check_box :prefer_plain_text %>
+        <%= f.check_box :include_quote_in_reply %>
+
         <% if @user.agent? %>
-          <h5><%= t(:email_settings) %></h5>
 
-          <%= f.check_box :notify, label: t(:receive_new_ticket_notifications) %>
+          <%= f.check_box :notify,
+              label: t(:receive_new_ticket_notifications) %>
 
-          <%= f.text_area :signature, rows: 5, cols: 20, class: 'tinymce' %>
-        <% elsif can? :create, Labeling %>
+          <%= f.text_area :signature, rows: 5, cols: 20, class: 'tinymce mbl' %>
+        <% end %>
+
+
+        <% if can? :create, Labeling.new(labelable: @user) %>
           <h5><%= t(:access_control) %></h5>
 
           <p><%= t(:have_access_to_label) %></p>
 
-          <%= f.label :label_ids %>
-          <%= f.collection_select :label_ids, @labels, :id, :name, {}, {multiple: true, class: 'select2'} %>
+          <%= f.collection_select :label_ids, @labels, :id, :name, {}, {
+              multiple: true, class: 'select2 mbl' } %>
         <% end %>
 
         <% unless Rails.application.secrets[:google_client_id].blank? %>
@@ -62,7 +68,7 @@
     </div>
     <div class="row">
       <div class="medium-12 columns bt">
-        <%= f.submit t(:save), class: 'success button radius mt' %>
+        <%= f.submit t(:save), class: 'success button radius mtl' %>
       </div>
     </div>
 

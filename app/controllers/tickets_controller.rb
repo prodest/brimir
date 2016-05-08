@@ -1,5 +1,5 @@
 # Brimir is a helpdesk system to handle email support requests.
-# Copyright (C) 2012-2015 Ivaldi http://ivaldi.nl
+# Copyright (C) 2012-2015 Ivaldi https://ivaldi.nl/
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -15,34 +15,71 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 class TicketsController < ApplicationController
+  include HtmlTextHelper
+  include TicketsStrongParams
+  include ActionView::Helpers::SanitizeHelper # dependency of HtmlTextHelper
 
   before_filter :authenticate_user!, except: [:create, :new]
   load_and_authorize_resource :ticket, except: :create
   skip_authorization_check only: :create
-  skip_before_action :verify_authenticity_token, only: :create, if: 'request.format.json?'
 
-  # this is needed for brimir integration in other sites
-  before_filter :allow_cors, only: [:create, :new]
+  # allow ticket creation using json posts
+  skip_before_action :verify_authenticity_token, only: :create, if: 'request.format.json?'
 
   def show
     @agents = User.agents
 
-    @reply = @ticket.replies.new(user: current_user)
-    @reply.set_default_notifications!
+    draft = @ticket.replies
+        .where('user_id IS NULL OR user_id = ?', current_user.id)
+        .where(draft: true)
+        .first
+
+    @replies = @ticket.replies.chronologically.without_drafts.select do |reply|
+      can? :show, reply
+    end
+
+    if draft.present?
+      @reply = draft
+    else
+      @reply = @ticket.replies.new(user: current_user)
+      @reply.reply_to = @replies.select{ |r| !r.internal? }.last || @ticket
+      @reply.set_default_notifications!
+    end
 
     @labeling = Labeling.new(labelable: @ticket)
+
+    @outgoing_addresses = EmailAddress.verified.ordered
+
+    respond_to do |format|
+      format.html
+      format.eml do
+        begin
+          send_file @ticket.raw_message.path(:original),
+              filename: "ticket-#{@ticket.id}.eml",
+              type: 'text/plain',
+              disposition: :attachment
+        rescue
+          raise ActiveRecord::RecordNotFound
+        end
+      end
+    end
   end
 
   def index
     @agents = User.agents
 
-    params[:status] ||= 'open'
+    params[:status] ||= 'open' unless params[:user_id]
 
     @tickets = @tickets.by_status(params[:status])
       .search(params[:q])
       .by_label_id(params[:label_id])
       .filter_by_assignee_id(params[:assignee_id])
+      .filter_by_user_id(params[:user_id])
       .ordered
+    
+    if params[:status] != 'merged'
+      @tickets = @tickets.where.not(status: Ticket.statuses[:merged])
+    end
 
     respond_to do |format|
       format.html do
@@ -95,21 +132,13 @@ class TicketsController < ApplicationController
   end
 
   def new
-    unless current_user.blank?
-      signature = { content: '<p></p>' + current_user.signature.to_s }
-    else
-      signature = {}
-    end
-
-    unless params[:ticket].nil? # prefill params given?
-      @ticket = Ticket.new(signature.merge(ticket_params))
-    else
-      @ticket = Ticket.new(signature)
-    end
+    @ticket = Ticket.new
 
     unless current_user.nil?
       @ticket.user = current_user
     end
+
+    @email_addresses = EmailAddress.verified.ordered
   end
 
   def create
@@ -119,35 +148,14 @@ class TicketsController < ApplicationController
       @ticket = Ticket.new(ticket_params)
     end
 
-    if @ticket.save
-
-      Rule.apply_all(@ticket) unless @ticket.is_a?(Reply)
-
-      # where user notifications added?
-      if @ticket.notified_users.count == 0
-        @ticket.set_default_notifications!
-      end
-
-      # @ticket might be a Reply when via json post
-      if @ticket.is_a?(Ticket)
-        if @ticket.assignee.nil?
-          @ticket.notified_users.each do |user|
-            mail = NotificationMailer.new_ticket(@ticket, user)
-            mail.deliver_now
-            @ticket.message_id = mail.message_id
-          end
-
-          @ticket.save
-        else
-          NotificationMailer.assigned(@ticket).deliver_now
-        end
-      end
+    if !@ticket.nil? && @ticket.save
+      NotificationMailer.incoming_message(@ticket, params[:message])
     end
 
     respond_to do |format|
       format.html do
 
-        if @ticket.valid?
+        if !@ticket.nil? && @ticket.valid?
 
           if current_user.nil?
             render 'create'
@@ -156,52 +164,23 @@ class TicketsController < ApplicationController
           end
 
         else
+          @email_addresses = EmailAddress.verified.ordered
           render 'new'
         end
 
       end
 
       format.json do
-        render json: @ticket, status: :created
+        if @ticket.nil?
+          render json: {}, status: :created  # bounce mail handled correctly
+        elsif @ticket.valid?
+          render json: @ticket, status: :created
+        else
+          render json: @ticket, status: :unprocessable_entity
+        end
       end
 
       format.js { render }
     end
   end
-
-  protected
-    def ticket_params
-      if !current_user.nil? && current_user.agent?
-        params.require(:ticket).permit(
-            :from,
-            :content,
-            :subject,
-            :status,
-            :assignee_id,
-            :priority,
-            :message_id,
-            attachments_attributes: [
-              :file
-            ])
-      else
-        params.require(:ticket).permit(
-            :from,
-            :content,
-            :subject,
-            :priority,
-            attachments_attributes: [
-              :file
-            ])
-      end
-    end
-
-    def allow_cors
-      headers['Access-Control-Allow-Origin'] = '*'
-      headers['Access-Control-Allow-Methods'] = 'GET,POST'
-      headers['Access-Control-Allow-Headers'] =
-          %w{Origin Accept Content-Type X-Requested-With X-CSRF-Token}.join(',')
-
-      head :ok if request.request_method == 'OPTIONS'
-    end
-
 end

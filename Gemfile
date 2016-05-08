@@ -17,10 +17,19 @@ gem 'foundation_rails_helper'
 
 # to use debugger
 gem 'byebug', group: [:development, :test]
+gem 'pry', group: [:development, :test]
+gem 'pry-byebug', group: [:development, :test]
+
 
 group :development do
   # Spring application pre-loader
   gem 'spring'
+  gem 'meta_request'
+  gem 'better_errors'
+  gem 'binding_of_caller'
+
+  # open sent emails in the browser
+  gem 'letter_opener'
 end
 
 group :test do
@@ -34,7 +43,7 @@ end
 # Optional PostgreSQL for production
 gem 'pg', group: :postgresql
 # Optional MySQL for production
-gem 'mysql2', group: :mysql
+#gem 'mysql2', group: :mysql
 # Optional SQLite for development
 gem 'sqlite3', group: :sqlite
 
@@ -54,11 +63,8 @@ gem 'will_paginate'
 # attachments, thumbnails etc
 gem 'paperclip'
 
-# Markdown
-gem 'redcarpet'
-
 # select2 replacement for selectboxes
-gem 'select2-rails'
+gem 'select2-rails', '~> 3.5' # newer breaks Foundation Reveal on tickets#show
 
 gem 'font-awesome-rails', '~> 4.0'
 
@@ -71,9 +77,6 @@ gem 'http_accept_language'
 # internationalisation
 gem 'rails-i18n'
 gem 'devise-i18n'
-
-# non-digested assets for brimir-plugin js/css
-gem 'non-stupid-digest-assets'
 
 # Build JSON APIs with ease. Read more: https://github.com/rails/jbuilder
 gem 'jbuilder', '~> 2.2'
